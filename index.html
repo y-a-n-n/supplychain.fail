@@ -8,98 +8,240 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background-color: #0f1115; color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+        /* Smooth look for the dropdown selection */
+        select { color-scheme: dark; }
     </style>
 </head>
 <body class="p-6 md:p-12 min-h-screen flex flex-col justify-between">
 
-    <header class="mb-6 max-w-6xl mx-auto w-full">
-        <h1 class="text-xl font-bold tracking-tight text-white border-b border-gray-800 pb-3">SUPPLY_CHAIN_CVE_TIMELINE</h1>
-        <p class="text-xs text-gray-400 mt-2">Visualizing open-source ecosystem vulnerabilities over time scaled by CVSS severity.</p>
+    <header class="mb-6 max-w-6xl mx-auto w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-gray-800 pb-4">
+        <div>
+            <h1 class="text-xl font-bold tracking-tight text-white">SUPPLY_CHAIN_CVE_MATRIX</h1>
+            <p class="text-xs text-gray-400 mt-1">Weekly aggregate layout of registry vulnerabilities sorted by peak CVSS severity profiles.</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <label for="timeframe" class="text-xs text-gray-500 font-bold">TIMEFRAME:</label>
+            <select id="timeframe" class="bg-[#14171f] text-xs text-gray-300 font-mono border border-gray-800 rounded px-3 py-1.5 focus:outline-none focus:border-red-500 cursor-pointer">
+                <option value="last12" selected>Last 12 Months</option>
+                <option value="2026">2026 Grid</option>
+                <option value="2025">2025 Grid</option>
+                <option value="2024">2024 Grid</option>
+                <option value="2023">2023 Grid</option>
+            </select>
+        </div>
     </header>
 
     <main class="flex-grow max-w-6xl mx-auto w-full flex items-center justify-center">
-        <!-- Chart Container Target Container -->
-        <div id="timeline-chart" class="w-full h-[600px] bg-[#14171f] rounded-lg border border-gray-800 p-4"></div>
+        <div id="timeline-chart" class="w-full h-[500px] bg-[#14171f] rounded-lg border border-gray-800 p-4"></div>
     </main>
 
     <footer class="mt-6 text-center text-[10px] text-gray-500 max-w-6xl mx-auto w-full border-t border-gray-900 pt-4">
-        Data refreshed automatically via GitHub Actions from the open-source OSV Advisory DB.
+        Data updated automatically via GitHub Actions from the open-source OSV Advisory Engine database.
     </footer>
 
     <script>
         document.addEventListener("DOMContentLoaded", async () => {
             const chartDom = document.getElementById('timeline-chart');
+            const timeframeSelector = document.getElementById('timeframe');
             const myChart = echarts.init(chartDom, 'dark');
             
-            try {
-                const response = await fetch('data.json');
-                const dataset = await response.json();
+            let globalDataset = null;
+
+            // Helper: Find the uniform Sunday week-start string for any date anchor
+            function getSundayStartString(dateInput) {
+                const date = new Date(dateInput);
+                const day = date.getDay();
+                const diff = date.getDate() - day;
+                const sunday = new Date(date.setDate(diff));
+                return sunday.toISOString().split('T')[0];
+            }
+
+            // Generate sequence array of chronological week-start boundaries 
+            function generateTimelineWeeks(filterMode) {
+                const weeks = [];
+                let startAnchor, endAnchor;
+
+                if (filterMode === 'last12') {
+                    endAnchor = new Date(getSundayStartString(new Date()));
+                    startAnchor = new Date(endAnchor);
+                    startAnchor.setDate(startAnchor.getDate() - (52 * 7)); // 52 weeks back
+                } else {
+                    const TargetYear = parseInt(filterMode);
+                    startAnchor = new Date(getSundayStartString(new Date(TargetYear, 0, 1)));
+                    endAnchor = new Date(getSundayStartString(new Date(TargetYear, 11, 31)));
+                }
+
+                let current = new Date(startAnchor);
+                while (current <= endAnchor) {
+                    weeks.push(current.toISOString().split('T')[0]);
+                    current.setDate(current.getDate() + 7);
+                }
+                return weeks;
+            }
+
+            // Primary rendering controller pipeline
+            function renderMatrixChart(timeframeFilter) {
+                if (!globalDataset) return;
+
+                const ecosystems = globalDataset.meta.ecosystems;
+                const activeTimelineWeeks = generateTimelineWeeks(timeframeFilter);
+
+                // Step 1: Initialize hash map buckets for incoming alerts
+                const metricsHashMap = {};
                 
-                const ecosystems = dataset.meta.ecosystems;
-                
-                // Format dataset for ECharts bubble layout
-                const chartData = dataset.data.map(item => {
-                    return [
-                        item[0], // X-Axis (Date string)
-                        item[1], // Y-Axis (Ecosystem index integer)
-                        item[2], // Bubble Size (CVSS float)
-                        item[3]  // Tooltip Payload (GHSA ID string)
-                    ];
+                globalDataset.data.forEach(item => {
+                    const rawDate = item[0];
+                    const ecosystemIndex = item[1];
+                    const severityScore = item[2];
+                    const advisoryId = item[3] || 'N/A';
+
+                    // Normalize to Sunday start tracking node
+                    const weekGroupKey = getSundayStartString(rawDate);
+                    const bucketCompositeKey = `${weekGroupKey}_${ecosystemIndex}`;
+
+                    if (activeTimelineWeeks.includes(weekGroupKey)) {
+                        if (!metricsHashMap[bucketCompositeKey]) {
+                            metricsHashMap[bucketCompositeKey] = {
+                                maxSeverity: severityScore,
+                                alertCount: 1,
+                                trackingIds: [advisoryId]
+                            };
+                        } else {
+                            // Accumulate structural metrics per block
+                            if (severityScore > metricsHashMap[bucketCompositeKey].maxSeverity) {
+                                metricsHashMap[bucketCompositeKey].maxSeverity = severityScore;
+                            }
+                            metricsHashMap[bucketCompositeKey].alertCount += 1;
+                            if (metricsHashMap[bucketCompositeKey].trackingIds.length < 3) {
+                                metricsHashMap[bucketCompositeKey].trackingIds.push(advisoryId);
+                            }
+                        }
+                    }
                 });
 
+                // Step 2: Build clean ECharts matrix payload
+                const matrixSeriesData = [];
+                
+                activeTimelineWeeks.forEach((weekStr, weekIndex) => {
+                    ecosystems.forEach((ecoName, ecoIndex) => {
+                        const searchKey = `${weekStr}_${ecoIndex}`;
+                        
+                        if (metricsHashMap[searchKey]) {
+                            const node = metricsHashMap[searchKey];
+                            matrixSeriesData.push([
+                                weekIndex, 
+                                ecoIndex, 
+                                node.maxSeverity, 
+                                node.alertCount, 
+                                node.trackingIds.join(', '),
+                                weekStr
+                            ]);
+                        } else {
+                            // Complete empty node placeholder block to keep grid shape consistent
+                            matrixSeriesData.push([weekIndex, ecoIndex, 0, 0, '', weekStr]);
+                        }
+                    });
+                });
+
+                // Step 3: Configure ECharts configuration specification parameters
                 const option = {
                     backgroundColor: 'transparent',
                     tooltip: {
                         position: 'top',
                         formatter: (params) => {
+                            const count = params.value[3];
+                            if (count === 0) {
+                                return `<div class="p-1 font-mono text-xs text-gray-400">
+                                    <strong>Week of:</strong> ${params.value[5]}<br/>
+                                    <strong>Registry:</strong> ${ecosystems[params.value[1]]}<br/>
+                                    <span>No reported vulnerabilities</span>
+                                </div>`;
+                            }
                             return `<div class="p-1 font-mono text-xs">
-                                <strong>ID:</strong> ${params.value[3]}<br/>
-                                <strong>Date:</strong> ${params.value[0]}<br/>
+                                <strong>Week of:</strong> ${params.value[5]}<br/>
                                 <strong>Registry:</strong> ${ecosystems[params.value[1]]}<br/>
-                                <strong>Severity:</strong> <span class="text-red-400 font-bold">${params.value[2]}</span>
+                                <strong>Volume:</strong> ${count} CVE(s)<br/>
+                                <strong>Peak Severity:</strong> <span class="text-red-400 font-bold">${params.value[2]}</span><br/>
+                                <span class="text-gray-400 text-[10px] mt-1 block">Samples: ${params.value[4]}</span>
                             </div>`;
                         }
                     },
-                    grid: { left: '10%', right: '5%', top: '5%', bottom: '10%', containLabel: true },
+                    grid: { left: '8%', right: '2%', top: '12%', bottom: '8%', containLabel: true },
                     xAxis: {
-                        type: 'time',
-                        splitLine: { show: true, lineStyle: { color: '#1e2330', type: 'dashed' } },
-                        axisLine: { lineStyle: { color: '#4a5568' } }
+                        type: 'category',
+                        data: activeTimelineWeeks,
+                        axisLine: { show: false },
+                        axisTick: { show: false },
+                        axisLabel: {
+                            margin: 12,
+                            textStyle: { color: '#71717a', fontSize: 10 },
+                            // Format: Only prints month name intervals to look like GitHub headers
+                            formatter: function (value) {
+                                const d = new Date(value);
+                                if (d.getDate() <= 7) {
+                                    return d.toLocaleString('default', { month: 'short' }).toUpperCase();
+                                }
+                                return '';
+                            }
+                        }
                     },
                     yAxis: {
                         type: 'category',
                         data: ecosystems,
-                        boundaryGap: true,
-                        splitLine: { show: true, lineStyle: { color: '#1e2330' } },
-                        axisLine: { lineStyle: { color: '#4a5568' } },
-                        axisLabel: { margin: 15, fontStyle: 'bold' }
+                        axisLine: { show: false },
+                        axisTick: { show: false },
+                        axisLabel: { margin: 15, textStyle: { color: '#e2e8f0', fontWeight: 'bold', fontSize: 11 } }
+                    },
+                    visualMap: {
+                        type: 'piecewise',
+                        orient: 'horizontal',
+                        left: 'center',
+                        top: 0,
+                        itemWidth: 12,
+                        itemHeight: 12,
+                        textStyle: { color: '#a1a1aa', fontSize: 10, fontFamily: 'monospace' },
+                        // Piecewise mapping colors matching request: Darker/deeper crimson for higher severity
+                        pieces: [
+                            { value: 0, label: 'None', color: '#1c202c' }, // Default empty box layout tint
+                            { min: 0.1, max: 3.9, label: 'Low (0.1-3.9)', color: '#fee2e2' }, 
+                            { min: 4.0, max: 6.9, label: 'Mid (4.0-6.9)', color: '#fca5a5' },
+                            { min: 7.0, max: 8.9, label: 'High (7.0-8.9)', color: '#dc2626' },
+                            { min: 9.0, max: 10.0, label: 'Critical (9.0-10.0)', color: '#7f1d1d' } 
+                        ]
                     },
                     series: [{
-                        type: 'scatter',
-                        data: chartData,
-                        symbolSize: (data) => {
-                            // Scale the bubble area exponentially by CVSS score for dynamic distinction
-                            return Math.pow(data[2], 1.4) * 1.5;
-                        },
+                        type: 'heatmap',
+                        data: matrixSeriesData,
+                        label: { show: false },
                         itemStyle: {
-                            color: (params) => {
-                                const score = params.value[2];
-                                if (score >= 9.0) return '#ef4444'; // Critical -> Red
-                                if (score >= 7.0) return '#f97316'; // High -> Orange
-                                if (score >= 4.0) return '#eab308'; // Medium -> Yellow
-                                return '#3b82f6';           // Low -> Blue
-                            },
-                            opacity: 0.6
+                            // Thick border gaps colored to match background container converts grid to individual squares
+                            borderColor: '#14171f',
+                            borderWidth: 3,
+                            borderRadius: 3
                         }
                     }]
                 };
 
-                myChart.setOption(option);
+                myChart.setOption(option, true);
+            }
+
+            // Initial dataset lifecycle load
+            try {
+                const response = await fetch('data.json');
+                globalDataset = await response.json();
                 
+                // Initialize default render view
+                renderMatrixChart(timeframeSelector.value);
+
+                // Re-bind change listeners for control picker
+                timeframeSelector.addEventListener('change', (e) => {
+                    renderMatrixChart(e.target.value);
+                });
+
                 window.addEventListener('resize', () => myChart.resize());
 
             } catch (error) {
-                chartDom.innerHTML = `<div class="flex items-center justify-center h-full text-red-400 text-xs">Error loading dataset: Check data.json existence.</div>`;
+                chartDom.innerHTML = `<div class="flex items-center justify-center h-full text-red-400 text-xs font-mono">Error loading dataset: Ensure data.json file asset paths match.</div>`;
                 console.error(error);
             }
         });
