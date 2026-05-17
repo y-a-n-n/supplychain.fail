@@ -34,8 +34,9 @@
         <div id="timeline-chart" class="w-full h-[480px] bg-[#14171f] rounded-lg border border-gray-800 p-2 md:p-4"></div>
     </main>
 
-    <footer class="mt-6 text-center text-[10px] text-gray-500 max-w-6xl mx-auto w-full border-t border-gray-900 pt-4">
-        Data updated automatically via GitHub Actions from the open-source OSV Advisory Engine database. Touch-drag or scroll to pan data on narrow screens.
+    <footer class="mt-6 text-center text-[10px] text-gray-500 max-w-6xl mx-auto w-full border-t border-gray-900 pt-4 leading-relaxed">
+        <strong>Methodology:</strong> Data synchronized daily via OSV. Matrix cells reflect total weekly volume. Linux kernel advisories are strictly filtered to official CVEs with CVSS &ge; 7.0 to eliminate tracking noise. <br/>
+        <span class="text-gray-600">Hover over squares to interact with individual CVE advisory links. Touch-drag or scroll to pan data.</span>
     </footer>
 
     <script>
@@ -46,7 +47,6 @@
             
             let globalDataset = null;
 
-            // Strict Timezone-Agnostic UTC Sunday normalizer
             function getSundayStartString(dateInput) {
                 if (!dateInput) return null;
                 const cleanInput = dateInput.includes('T') ? dateInput.split('T')[0] : dateInput;
@@ -58,7 +58,6 @@
                 return d.toISOString().split('T')[0];
             }
 
-            // Generate chronological sequence array of week-start strings
             function generateTimelineWeeks(filterMode) {
                 const weeks = [];
                 let startAnchor, endAnchor;
@@ -91,7 +90,6 @@
                 const ecosystems = globalDataset.meta.ecosystems;
                 const activeTimelineWeeks = generateTimelineWeeks(timeframeFilter);
 
-                // Map out structural log entries
                 const metricsHashMap = {};
                 
                 globalDataset.data.forEach(item => {
@@ -107,7 +105,7 @@
                         if (!metricsHashMap[bucketCompositeKey]) {
                             metricsHashMap[bucketCompositeKey] = {
                                 maxSeverity: severityScore,
-                                alertCount: 1, // This is our structural sum value
+                                alertCount: 1, 
                                 trackingIds: [advisoryId]
                             };
                         } else {
@@ -115,14 +113,13 @@
                                 metricsHashMap[bucketCompositeKey].maxSeverity = severityScore;
                             }
                             metricsHashMap[bucketCompositeKey].alertCount += 1;
-                            if (metricsHashMap[bucketCompositeKey].trackingIds.length < 3 && !metricsHashMap[bucketCompositeKey].trackingIds.includes(advisoryId)) {
+                            if (metricsHashMap[bucketCompositeKey].trackingIds.length < 5 && !metricsHashMap[bucketCompositeKey].trackingIds.includes(advisoryId)) {
                                 metricsHashMap[bucketCompositeKey].trackingIds.push(advisoryId);
                             }
                         }
                     }
                 });
 
-                // Build coordinate maps matching visual array layout matrix
                 const matrixSeriesData = [];
                 
                 activeTimelineWeeks.forEach((weekStr, weekIndex) => {
@@ -132,15 +129,14 @@
                         if (metricsHashMap[searchKey]) {
                             const node = metricsHashMap[searchKey];
                             matrixSeriesData.push([
-                                weekIndex,                  // 0: X Position
-                                ecoIndex,                   // 1: Y Position
-                                node.alertCount,            // 2: Value (Sum count for color mapping)
-                                node.maxSeverity,           // 3: Peak Severity
-                                node.trackingIds.join(', '),// 4: Reference IDs
-                                weekStr                     // 5: Date string representation
+                                weekIndex, 
+                                ecoIndex, 
+                                node.alertCount, 
+                                node.maxSeverity, 
+                                node.trackingIds.join(','), // CSV string of IDs
+                                weekStr
                             ]);
                         } else {
-                            // Explicit 0 value flags an empty cell block to the visual map colors
                             matrixSeriesData.push([weekIndex, ecoIndex, 0, 0, '', weekStr]);
                         }
                     });
@@ -150,8 +146,12 @@
                     backgroundColor: 'transparent',
                     tooltip: {
                         position: 'top',
+                        enterable: true,      // CRITICAL: Allows mouse entry into the tooltip container
+                        hideDelay: 300,       // Grace period (ms) so the tooltip doesn't snap closed instantly
+                        renderMode: 'html',
                         formatter: (params) => {
-                            const count = params.value[2]; // Count volume is now at index 2
+                            const count = Number(params.value[2]) || 0; 
+                            
                             if (count === 0) {
                                 return `<div class="p-1 font-mono text-xs text-gray-400">
                                     <strong>Week of:</strong> ${params.value[5]}<br/>
@@ -159,16 +159,38 @@
                                     <span>0 Reported Vulnerabilities</span>
                                 </div>`;
                             }
-                            return `<div class="p-1 font-mono text-xs">
+
+                            // Convert raw comma-separated tracking IDs into rich clickable link anchors
+                            const rawIds = params.value[4] ? params.value[4].split(',') : [];
+                            let linksHtml = '';
+                            
+                            if (rawIds.length > 0) {
+                                linksHtml = rawIds.map(id => {
+                                    const cleanId = id.trim();
+                                    return `<a href="https://osv.dev/vulnerability/${cleanId}" 
+                                               target="_blank" 
+                                               style="color: #60a5fa; text-decoration: underline; margin-right: 8px; display: inline-block;"
+                                               onmouseover="this.style.color='#93c5fd'" 
+                                               onmouseout="this.style.color='#60a5fa'">
+                                               ${cleanId}
+                                            </a>`;
+                                }).join(' ');
+                            } else {
+                                linksHtml = '<span class="text-gray-500">N/A</span>';
+                            }
+
+                            return `<div class="p-1 font-mono text-xs" style="pointer-events: auto;">
                                 <strong>Week of:</strong> ${params.value[5]}<br/>
                                 <strong>Registry:</strong> ${ecosystems[params.value[1]]}<br/>
                                 <strong>Total Volume:</strong> <span class="text-white font-bold">${count} CVE(s)</span><br/>
                                 <strong>Peak Severity:</strong> <span class="text-red-400 font-bold">${params.value[3]}</span><br/>
-                                <span class="text-gray-400 text-[10px] mt-1 block max-w-[240px] truncate">Samples: ${params.value[4]}</span>
+                                <div style="margin-top: 8px; border-top: 1px solid #374151; padding-top: 6px;">
+                                    <strong style="display:block; margin-bottom: 4px; color: #9ca3af;">Advisories (Click to view):</strong>
+                                    <div style="max-width: 260px; word-break: break-all;">${linksHtml}</div>
+                                </div>
                             </div>`;
                         }
                     },
-                    // Expanded left grid boundaries to fully accommodate text strings on desktop/mobile viewports
                     grid: { left: '85', right: '20', top: '60', bottom: '40', containLabel: false },
                     xAxis: {
                         type: 'category',
@@ -176,13 +198,12 @@
                         axisLine: { show: false },
                         axisTick: { show: false },
                         axisLabel: {
-                            interval: 0, // Forces rendering engine to process every column slot
+                            interval: 0, 
                             margin: 14,
                             textStyle: { color: '#8c9ba5', fontSize: 10, fontFamily: 'monospace' },
                             formatter: function (value) {
                                 const d = new Date(value + 'T00:00:00Z');
-                                // Only emit month name headers on the first week boundary crossing
-                                if (d.getTXTDate <= 7 || d.getUTCDate() <= 7) {
+                                if (d.getUTCDate() <= 7) {
                                     return d.toLocaleString('default', { month: 'short', timeZone: 'UTC' }).toUpperCase();
                                 }
                                 return '';
@@ -201,7 +222,7 @@
                     },
                     visualMap: {
                         type: 'piecewise',
-                        dimension: 2, // CRITICAL: Tells visualMap to lock explicitly onto index 2 (the sum count)
+                        dimension: 2, 
                         orient: 'horizontal',
                         left: 'center',
                         top: 10,
@@ -209,13 +230,12 @@
                         itemHeight: 11,
                         itemGap: 12,
                         textStyle: { color: '#94a3b8', fontSize: 10, fontFamily: 'monospace' },
-                        // GitHub contribution scale variant transitioning from soft pink up to intense dark crimson
                         pieces: [
-                            { value: 0, label: '0 CVEs', color: '#161b22' },     // Classic visible empty box fill
-                            { min: 1, max: 2, label: '1-2 Low', color: '#fee2e2' },   // Faint tint
-                            { min: 3, max: 7, label: '3-7 Mid', color: '#fca5a5' },   // Medium tint
-                            { min: 8, max: 19, label: '8-19 High', color: '#dc2626' }, // Strong red
-                            { min: 20, label: '20+ Critical', color: '#7f1d1d' }      // Dark deep crimson
+                            { value: 0, label: '0 CVEs', color: '#161b22' },
+                            { min: 1, max: 2, label: '1-2 Low', color: '#fee2e2' },
+                            { min: 3, max: 7, label: '3-7 Mid', color: '#fca5a5' },
+                            { min: 8, max: 19, label: '8-19 High', color: '#dc2626' },
+                            { min: 20, label: '20+ Critical', color: '#7f1d1d' }
                         ]
                     },
                     dataZoom: [
@@ -231,17 +251,8 @@
                         type: 'heatmap',
                         data: matrixSeriesData,
                         label: { show: false },
-                        // Map configurations to turn rows into isolated GitHub squares
-                        encode: {
-                            x: 0,
-                            y: 1,
-                            value: 2 // Encodes the sum value mapping directly to the series processor
-                        },
-                        itemStyle: {
-                            borderColor: '#14171f',
-                            borderWidth: 2,
-                            borderRadius: 2
-                        }
+                        encode: { x: 0, y: 1, value: 2 },
+                        itemStyle: { borderColor: '#14171f', borderWidth: 2, borderRadius: 2 }
                     }]
                 };
 
