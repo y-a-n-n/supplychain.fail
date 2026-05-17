@@ -16,7 +16,7 @@
     <header class="mb-4 max-w-6xl mx-auto w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-gray-800 pb-4">
         <div>
             <h1 class="text-xl font-bold tracking-tight text-white">SUPPLY_CHAIN_CVE_MATRIX</h1>
-            <p class="text-xs text-gray-400 mt-1">Weekly aggregate layout of registry vulnerabilities sorted by peak CVSS severity profiles.</p>
+            <p class="text-xs text-gray-400 mt-1">Weekly contribution matrix tracking total open-source vulnerability volume.</p>
         </div>
         <div class="flex items-center gap-2">
             <label for="timeframe" class="text-xs text-gray-500 font-bold">TIMEFRAME:</label>
@@ -49,7 +49,6 @@
             // Strict Timezone-Agnostic UTC Sunday normalizer
             function getSundayStartString(dateInput) {
                 if (!dateInput) return null;
-                // Force date format to parse cleanly as plain UTC midnight
                 const cleanInput = dateInput.includes('T') ? dateInput.split('T')[0] : dateInput;
                 const d = new Date(cleanInput + 'T00:00:00Z');
                 if (isNaN(d.getTime())) return null;
@@ -64,7 +63,6 @@
                 const weeks = [];
                 let startAnchor, endAnchor;
 
-                // Grab current absolute UTC date string
                 const now = new Date();
                 const todayStr = now.toISOString().split('T')[0];
 
@@ -72,7 +70,7 @@
                     const endStr = getSundayStartString(todayStr);
                     endAnchor = new Date(endStr + 'T00:00:00Z');
                     startAnchor = new Date(endAnchor.getTime());
-                    startAnchor.setUTCDate(startAnchor.getUTCDate() - (51 * 7)); // 52 weeks total
+                    startAnchor.setUTCDate(startAnchor.getUTCDate() - (51 * 7)); 
                 } else {
                     const targetYear = parseInt(filterMode);
                     startAnchor = new Date(getSundayStartString(`${targetYear}-01-01`) + 'T00:00:00Z');
@@ -93,7 +91,7 @@
                 const ecosystems = globalDataset.meta.ecosystems;
                 const activeTimelineWeeks = generateTimelineWeeks(timeframeFilter);
 
-                // Step 1: Populate hash map buckets for dataset entries
+                // Map out structural log entries
                 const metricsHashMap = {};
                 
                 globalDataset.data.forEach(item => {
@@ -109,7 +107,7 @@
                         if (!metricsHashMap[bucketCompositeKey]) {
                             metricsHashMap[bucketCompositeKey] = {
                                 maxSeverity: severityScore,
-                                alertCount: 1,
+                                alertCount: 1, // This is our structural sum value
                                 trackingIds: [advisoryId]
                             };
                         } else {
@@ -124,7 +122,7 @@
                     }
                 });
 
-                // Step 2: Build coordinate maps matching visual array layout matrix
+                // Build coordinate maps matching visual array layout matrix
                 const matrixSeriesData = [];
                 
                 activeTimelineWeeks.forEach((weekStr, weekIndex) => {
@@ -134,58 +132,57 @@
                         if (metricsHashMap[searchKey]) {
                             const node = metricsHashMap[searchKey];
                             matrixSeriesData.push([
-                                weekIndex, 
-                                ecoIndex, 
-                                node.maxSeverity, 
-                                node.alertCount, 
-                                node.trackingIds.join(', '),
-                                weekStr
+                                weekIndex,                  // 0: X Position
+                                ecoIndex,                   // 1: Y Position
+                                node.alertCount,            // 2: Value (Sum count for color mapping)
+                                node.maxSeverity,           // 3: Peak Severity
+                                node.trackingIds.join(', '),// 4: Reference IDs
+                                weekStr                     // 5: Date string representation
                             ]);
                         } else {
-                            // Value -1 explicitly signals an empty grid node to the visual map
-                            matrixSeriesData.push([weekIndex, ecoIndex, -1, 0, '', weekStr]);
+                            // Explicit 0 value flags an empty cell block to the visual map colors
+                            matrixSeriesData.push([weekIndex, ecoIndex, 0, 0, '', weekStr]);
                         }
                     });
                 });
 
-                // Step 3: Construct refined responsive chart options
                 const option = {
                     backgroundColor: 'transparent',
                     tooltip: {
                         position: 'top',
                         formatter: (params) => {
-                            const count = params.value[3];
+                            const count = params.value[2]; // Count volume is now at index 2
                             if (count === 0) {
                                 return `<div class="p-1 font-mono text-xs text-gray-400">
                                     <strong>Week of:</strong> ${params.value[5]}<br/>
                                     <strong>Registry:</strong> ${ecosystems[params.value[1]]}<br/>
-                                    <span>No reported vulnerabilities</span>
+                                    <span>0 Reported Vulnerabilities</span>
                                 </div>`;
                             }
                             return `<div class="p-1 font-mono text-xs">
                                 <strong>Week of:</strong> ${params.value[5]}<br/>
                                 <strong>Registry:</strong> ${ecosystems[params.value[1]]}<br/>
-                                <strong>Volume:</strong> ${count} CVE(s)<br/>
-                                <strong>Peak Severity:</strong> <span class="text-red-400 font-bold">${params.value[2]}</span><br/>
+                                <strong>Total Volume:</strong> <span class="text-white font-bold">${count} CVE(s)</span><br/>
+                                <strong>Peak Severity:</strong> <span class="text-red-400 font-bold">${params.value[3]}</span><br/>
                                 <span class="text-gray-400 text-[10px] mt-1 block max-w-[240px] truncate">Samples: ${params.value[4]}</span>
                             </div>`;
                         }
                     },
-                    // Add defensive padding layouts on the left/bottom bounds to stop label clipping
-                    grid: { left: '70', right: '15', top: '50', bottom: '40', containLabel: false },
+                    // Expanded left grid boundaries to fully accommodate text strings on desktop/mobile viewports
+                    grid: { left: '85', right: '20', top: '60', bottom: '40', containLabel: false },
                     xAxis: {
                         type: 'category',
                         data: activeTimelineWeeks,
                         axisLine: { show: false },
                         axisTick: { show: false },
                         axisLabel: {
-                            interval: 0, // CRITICAL: Tells ECharts to process every week instead of skipping headers
+                            interval: 0, // Forces rendering engine to process every column slot
                             margin: 14,
                             textStyle: { color: '#8c9ba5', fontSize: 10, fontFamily: 'monospace' },
                             formatter: function (value) {
                                 const d = new Date(value + 'T00:00:00Z');
-                                // Only emit month name headers on the first week of a month block
-                                if (d.getUTCDate() <= 7) {
+                                // Only emit month name headers on the first week boundary crossing
+                                if (d.getTXTDate <= 7 || d.getUTCDate() <= 7) {
                                     return d.toLocaleString('default', { month: 'short', timeZone: 'UTC' }).toUpperCase();
                                 }
                                 return '';
@@ -204,27 +201,28 @@
                     },
                     visualMap: {
                         type: 'piecewise',
+                        dimension: 2, // CRITICAL: Tells visualMap to lock explicitly onto index 2 (the sum count)
                         orient: 'horizontal',
                         left: 'center',
                         top: 10,
-                        itemWidth: 10,
-                        itemHeight: 10,
-                        itemGap: 15,
+                        itemWidth: 11,
+                        itemHeight: 11,
+                        itemGap: 12,
                         textStyle: { color: '#94a3b8', fontSize: 10, fontFamily: 'monospace' },
+                        // GitHub contribution scale variant transitioning from soft pink up to intense dark crimson
                         pieces: [
-                            { value: -1, label: 'None', color: '#1e2330' }, // Noticeable GitHub empty grid color
-                            { min: 0.0, max: 3.9, label: 'Low', color: '#fee2e2' }, 
-                            { min: 4.0, max: 6.9, label: 'Mid', color: '#fca5a5' },
-                            { min: 7.0, max: 8.9, label: 'High', color: '#dc2626' },
-                            { min: 9.0, max: 10.0, label: 'Critical', color: '#7f1d1d' } 
+                            { value: 0, label: '0 CVEs', color: '#161b22' },     // Classic visible empty box fill
+                            { min: 1, max: 2, label: '1-2 Low', color: '#fee2e2' },   // Faint tint
+                            { min: 3, max: 7, label: '3-7 Mid', color: '#fca5a5' },   // Medium tint
+                            { min: 8, max: 19, label: '8-19 High', color: '#dc2626' }, // Strong red
+                            { min: 20, label: '20+ Critical', color: '#7f1d1d' }      // Dark deep crimson
                         ]
                     },
-                    // Enables seamless touch panning/scrolling right inside the graph on mobile layouts
                     dataZoom: [
                         {
                             type: 'inside',
                             xAxisIndex: 0,
-                            zoomOnMouseWheel: false, // Prevents page scroll interference on desktop
+                            zoomOnMouseWheel: false, 
                             moveOnMouseMove: true,
                             moveOnTouch: true
                         }
@@ -233,6 +231,12 @@
                         type: 'heatmap',
                         data: matrixSeriesData,
                         label: { show: false },
+                        // Map configurations to turn rows into isolated GitHub squares
+                        encode: {
+                            x: 0,
+                            y: 1,
+                            value: 2 // Encodes the sum value mapping directly to the series processor
+                        },
                         itemStyle: {
                             borderColor: '#14171f',
                             borderWidth: 2,
