@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supply Chain CVE Timeline</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.0/echarts.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #0f1115; color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    </style>
+</head>
+<body class="p-6 md:p-12 min-h-screen flex flex-col justify-between">
+
+    <header class="mb-6 max-w-6xl mx-auto w-full">
+        <h1 class="text-xl font-bold tracking-tight text-white border-b border-gray-800 pb-3">SUPPLY_CHAIN_CVE_TIMELINE</h1>
+        <p class="text-xs text-gray-400 mt-2">Visualizing open-source ecosystem vulnerabilities over time scaled by CVSS severity.</p>
+    </header>
+
+    <main class="flex-grow max-w-6xl mx-auto w-full flex items-center justify-center">
+        <!-- Chart Container Target Container -->
+        <div id="timeline-chart" class="w-full h-[600px] bg-[#14171f] rounded-lg border border-gray-800 p-4"></div>
+    </main>
+
+    <footer class="mt-6 text-center text-[10px] text-gray-500 max-w-6xl mx-auto w-full border-t border-gray-900 pt-4">
+        Data refreshed automatically via GitHub Actions from the open-source OSV Advisory DB.
+    </footer>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", async () => {
+            const chartDom = document.getElementById('timeline-chart');
+            const myChart = echarts.init(chartDom, 'dark');
+            
+            try {
+                const response = await fetch('data.json');
+                const dataset = await response.json();
+                
+                const ecosystems = dataset.meta.ecosystems;
+                
+                // Format dataset for ECharts bubble layout
+                const chartData = dataset.data.map(item => {
+                    return [
+                        item[0], // X-Axis (Date string)
+                        item[1], // Y-Axis (Ecosystem index integer)
+                        item[2], // Bubble Size (CVSS float)
+                        item[3]  // Tooltip Payload (GHSA ID string)
+                    ];
+                });
+
+                const option = {
+                    backgroundColor: 'transparent',
+                    tooltip: {
+                        position: 'top',
+                        formatter: (params) => {
+                            return `<div class="p-1 font-mono text-xs">
+                                <strong>ID:</strong> ${params.value[3]}<br/>
+                                <strong>Date:</strong> ${params.value[0]}<br/>
+                                <strong>Registry:</strong> ${ecosystems[params.value[1]]}<br/>
+                                <strong>Severity:</strong> <span class="text-red-400 font-bold">${params.value[2]}</span>
+                            </div>`;
+                        }
+                    },
+                    grid: { left: '10%', right: '5%', top: '5%', bottom: '10%', containLabel: true },
+                    xAxis: {
+                        type: 'time',
+                        splitLine: { show: true, lineStyle: { color: '#1e2330', type: 'dashed' } },
+                        axisLine: { lineStyle: { color: '#4a5568' } }
+                    },
+                    yAxis: {
+                        type: 'category',
+                        data: ecosystems,
+                        boundaryGap: true,
+                        splitLine: { show: true, lineStyle: { color: '#1e2330' } },
+                        axisLine: { lineStyle: { color: '#4a5568' } },
+                        axisLabel: { margin: 15, fontStyle: 'bold' }
+                    },
+                    series: [{
+                        type: 'scatter',
+                        data: chartData,
+                        symbolSize: (data) => {
+                            // Scale the bubble area exponentially by CVSS score for dynamic distinction
+                            return Math.pow(data[2], 1.4) * 1.5;
+                        },
+                        itemStyle: {
+                            color: (params) => {
+                                const score = params.value[2];
+                                if (score >= 9.0) return '#ef4444'; // Critical -> Red
+                                if (score >= 7.0) return '#f97316'; // High -> Orange
+                                if (score >= 4.0) return '#eab308'; // Medium -> Yellow
+                                return '#3b82f6';           // Low -> Blue
+                            },
+                            opacity: 0.6
+                        }
+                    }]
+                };
+
+                myChart.setOption(option);
+                
+                window.addEventListener('resize', () => myChart.resize());
+
+            } catch (error) {
+                chartDom.innerHTML = `<div class="flex items-center justify-center h-full text-red-400 text-xs">Error loading dataset: Check data.json existence.</div>`;
+                console.error(error);
+            }
+        });
+    </script>
+</body>
+</html>
