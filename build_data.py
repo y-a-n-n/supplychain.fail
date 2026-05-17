@@ -43,7 +43,7 @@ def main():
                 
             ecosystem_str = affected[0]["package"].get("ecosystem", "").lower()
             
-            # ALIAS FIX: Map OSV's "crates.io" to our "cargo" index
+            # Map OSV's "crates.io" to our "cargo" index
             if ecosystem_str == "crates.io":
                 ecosystem_str = "cargo"
             
@@ -51,7 +51,7 @@ def main():
                 vuln_id = vuln.get("id", "")
                 score = extract_severity(vuln)
                 
-                # LINUX NOISE FILTER: Only official CVEs that are High/Critical (>= 7.0)
+                # STRICT LINUX FILTER: Only official CVE identifiers with CVSS >= 7.0
                 if ecosystem_str == "linux":
                     if not vuln_id.startswith("CVE-") or score < 7.0:
                         continue
