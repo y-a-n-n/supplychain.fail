@@ -2,8 +2,8 @@ import os
 import json
 import glob
 
-# Normalized mapping for the Y-Axis
-ECOSYSTEMS = ["npm", "pypi", "maven", "go", "cargo", "nuget", "packagist", "rubygems"]
+# Added 'linux' to the Y-Axis ecosystems
+ECOSYSTEMS = ["npm", "pypi", "maven", "go", "cargo", "nuget", "packagist", "rubygems", "linux"]
 ECOSYSTEM_MAP = {name: i for i, name in enumerate(ECOSYSTEMS)}
 
 def extract_severity(vuln):
@@ -23,8 +23,6 @@ def extract_severity(vuln):
 
 def main():
     records = []
-    
-    # Search the cloned repository path
     search_path = os.path.join("advisories", "advisories", "github-reviewed", "**", "*.json")
     
     for file_path in glob.glob(search_path, recursive=True):
@@ -32,7 +30,6 @@ def main():
             with open(file_path, "r") as f:
                 vuln = json.load(f)
             
-            # Skip withdrawn advisories
             if "withdrawn" in vuln:
                 continue
                 
@@ -40,23 +37,31 @@ def main():
             if not published:
                 continue
                 
-            # Extract ecosystem
             affected = vuln.get("affected", [])
             if not affected or "package" not in affected[0]:
                 continue
                 
             ecosystem_str = affected[0]["package"].get("ecosystem", "").lower()
             
+            # ALIAS FIX: Map OSV's "crates.io" to our "cargo" index
+            if ecosystem_str == "crates.io":
+                ecosystem_str = "cargo"
+            
             if ecosystem_str in ECOSYSTEM_MAP:
+                vuln_id = vuln.get("id", "")
                 score = extract_severity(vuln)
+                
+                # LINUX NOISE FILTER: Only official CVEs that are High/Critical (>= 7.0)
+                if ecosystem_str == "linux":
+                    if not vuln_id.startswith("CVE-") or score < 7.0:
+                        continue
+                
                 if score > 0.0:
-                    # Compressed flat array: [Date, Registry Index, CVSS Score, ID]
-                    records.append([published, ECOSYSTEM_MAP[ecosystem_str], score, vuln.get("id")])
+                    records.append([published, ECOSYSTEM_MAP[ecosystem_str], score, vuln_id])
                     
         except Exception:
             continue
 
-    # Output minimized JSON payload
     output = {
         "meta": {"ecosystems": ECOSYSTEMS},
         "data": records
