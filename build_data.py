@@ -41,11 +41,14 @@ def main():
             if not affected or "package" not in affected[0]:
                 continue
                 
-            ecosystem_str = affected[0]["package"].get("ecosystem", "").lower()
+            # Extract raw string to prevent losing mixed-case variations
+            raw_ecosystem = affected[0]["package"].get("ecosystem", "")
             
-            # Map OSV's "crates.io" to our "cargo" index
-            if ecosystem_str == "crates.io":
+            # Normalization Hook: Capture either variant and route to our 'cargo' row
+            if raw_ecosystem in ["crates.io", "Cargo"]:
                 ecosystem_str = "cargo"
+            else:
+                ecosystem_str = raw_ecosystem.lower()
             
             if ecosystem_str in ECOSYSTEM_MAP:
                 vuln_id = vuln.get("id", "")
