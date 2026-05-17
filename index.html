@@ -35,8 +35,7 @@
     </main>
 
     <footer class="mt-6 text-center text-[10px] text-gray-500 max-w-6xl mx-auto w-full border-t border-gray-900 pt-4 leading-relaxed">
-        <strong>Methodology:</strong> Data synchronized daily via OSV. Matrix cells reflect total weekly volume. Linux kernel advisories are strictly filtered to official CVEs with CVSS &ge; 7.0 to eliminate tracking noise. <br/>
-        <span class="text-gray-600">Hover over squares to interact with individual CVE advisory links. Touch-drag or scroll to pan data.</span>
+        <strong>Methodology:</strong> Tracks weekly vulnerability volume via OSV. Cargo aliases crates.io records. Linux kernel data strictly isolates official CVEs with CVSS &ge; 7.0. Tooltip links show actionable high/critical records.
     </footer>
 
     <script>
@@ -106,15 +105,18 @@
                             metricsHashMap[bucketCompositeKey] = {
                                 maxSeverity: severityScore,
                                 alertCount: 1, 
-                                trackingIds: [advisoryId]
+                                clickableIds: severityScore >= 7.0 ? [advisoryId] : []
                             };
                         } else {
                             if (severityScore > metricsHashMap[bucketCompositeKey].maxSeverity) {
                                 metricsHashMap[bucketCompositeKey].maxSeverity = severityScore;
                             }
                             metricsHashMap[bucketCompositeKey].alertCount += 1;
-                            if (metricsHashMap[bucketCompositeKey].trackingIds.length < 5 && !metricsHashMap[bucketCompositeKey].trackingIds.includes(advisoryId)) {
-                                metricsHashMap[bucketCompositeKey].trackingIds.push(advisoryId);
+                            
+                            if (severityScore >= 7.0) {
+                                if (metricsHashMap[bucketCompositeKey].clickableIds.length < 6 && !metricsHashMap[bucketCompositeKey].clickableIds.includes(advisoryId)) {
+                                    metricsHashMap[bucketCompositeKey].clickableIds.push(advisoryId);
+                                }
                             }
                         }
                     }
@@ -133,7 +135,7 @@
                                 ecoIndex, 
                                 node.alertCount, 
                                 node.maxSeverity, 
-                                node.trackingIds.join(','), // CSV string of IDs
+                                node.clickableIds.join(','), 
                                 weekStr
                             ]);
                         } else {
@@ -146,22 +148,22 @@
                     backgroundColor: 'transparent',
                     tooltip: {
                         position: 'top',
-                        enterable: true,      // CRITICAL: Allows mouse entry into the tooltip container
-                        hideDelay: 300,       // Grace period (ms) so the tooltip doesn't snap closed instantly
+                        enterable: true,      
+                        hideDelay: 400,       
                         renderMode: 'html',
                         formatter: (params) => {
-                            const count = Number(params.value[2]) || 0; 
+                            if (!params.data) return '';
+                            const count = Number(params.data[2]) || 0; 
                             
                             if (count === 0) {
                                 return `<div class="p-1 font-mono text-xs text-gray-400">
-                                    <strong>Week of:</strong> ${params.value[5]}<br/>
-                                    <strong>Registry:</strong> ${ecosystems[params.value[1]]}<br/>
+                                    <strong>Week of:</strong> ${params.data[5]}<br/>
+                                    <strong>Registry:</strong> ${ecosystems[params.data[1]]}<br/>
                                     <span>0 Reported Vulnerabilities</span>
                                 </div>`;
                             }
 
-                            // Convert raw comma-separated tracking IDs into rich clickable link anchors
-                            const rawIds = params.value[4] ? params.value[4].split(',') : [];
+                            const rawIds = params.data[4] ? params.data[4].split(',') : [];
                             let linksHtml = '';
                             
                             if (rawIds.length > 0) {
@@ -169,25 +171,24 @@
                                     const cleanId = id.trim();
                                     return `<a href="https://osv.dev/vulnerability/${cleanId}" 
                                                target="_blank" 
-                                               style="color: #60a5fa; text-decoration: underline; margin-right: 8px; display: inline-block;"
+                                               style="color: #60a5fa; text-decoration: underline; display: block; margin-top: 4px;"
                                                onmouseover="this.style.color='#93c5fd'" 
                                                onmouseout="this.style.color='#60a5fa'">
-                                               ${cleanId}
+                                               &#8226; ${cleanId}
                                             </a>`;
-                                }).join(' ');
-                            } else {
-                                linksHtml = '<span class="text-gray-500">N/A</span>';
+                                }).join('');
                             }
 
-                            return `<div class="p-1 font-mono text-xs" style="pointer-events: auto;">
-                                <strong>Week of:</strong> ${params.value[5]}<br/>
-                                <strong>Registry:</strong> ${ecosystems[params.value[1]]}<br/>
+                            return `<div class="p-1 font-mono text-xs" style="pointer-events: auto; min-width: 200px;">
+                                <strong>Week of:</strong> ${params.data[5]}<br/>
+                                <strong>Registry:</strong> ${ecosystems[params.data[1]]}<br/>
                                 <strong>Total Volume:</strong> <span class="text-white font-bold">${count} CVE(s)</span><br/>
-                                <strong>Peak Severity:</strong> <span class="text-red-400 font-bold">${params.value[3]}</span><br/>
+                                <strong>Peak Severity:</strong> <span class="text-red-400 font-bold">${params.data[3]}</span><br/>
+                                ${linksHtml ? `
                                 <div style="margin-top: 8px; border-top: 1px solid #374151; padding-top: 6px;">
-                                    <strong style="display:block; margin-bottom: 4px; color: #9ca3af;">Advisories (Click to view):</strong>
-                                    <div style="max-width: 260px; word-break: break-all;">${linksHtml}</div>
-                                </div>
+                                    <strong style="display:block; color: #9ca3af; margin-bottom: 2px;">Actionable Advisories (&ge;7.0):</strong>
+                                    <div style="max-height: 140px; overflow-y: auto; padding-right: 4px;">${linksHtml}</div>
+                                </div>` : ''}
                             </div>`;
                         }
                     },
