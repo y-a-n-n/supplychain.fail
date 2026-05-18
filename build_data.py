@@ -3,7 +3,7 @@ import json
 import glob
 import math
 
-ECOSYSTEMS = ["npm", "pypi", "maven", "go", "cargo", "nuget", "packagist", "rubygems", "linux"]
+ECOSYSTEMS = ["npm", "pypi", "maven", "go", "cargo", "nuget", "packagist", "rubygems"]
 ECOSYSTEM_MAP = {name: i for i, name in enumerate(ECOSYSTEMS)}
 
 AV = {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.20}
@@ -132,10 +132,6 @@ def main():
 
                 if ecosystem_str not in ECOSYSTEM_MAP:
                     continue
-
-                if ecosystem_str == "linux":
-                    if not vuln_id.startswith("CVE-") or score < 7.0:
-                        continue
 
                 dedupe_key = (published, ecosystem_str, vuln_id)
                 if dedupe_key in seen:
