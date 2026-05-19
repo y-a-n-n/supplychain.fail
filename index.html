@@ -158,41 +158,47 @@
                         hideDelay: 400,       
                         renderMode: 'html',
                         formatter: (params) => {
-                            if (!params.data) return '';
-                            const count = Number(params.data[2]) || 0; 
-                            
+                            const dataFields = params.data || params.value;
+                            if (!dataFields) return '<div class="p-1 text-red-400">Error: No node data detected</div>';
+
+                            const count = dataFields[2];
+                            const weekString = dataFields[5] || 'N/A';
+                            const ecoIndex = dataFields[1];
+                            const peakSeverity = dataFields[3] !== undefined ? dataFields[3] : 'N/A';
+
                             if (count === 0) {
-                                return `<div class="p-1 font-mono text-xs text-gray-400">
-                                    <strong>Week of:</strong> ${params.data[5]}<br/>
-                                    <strong>Registry:</strong> ${ecosystems[params.data[1]]}<br/>
+                                return `<div class="p-1 font-mono text-xs text-gray-400" style="pointer-events: auto; min-width: 220px;">
+                                    <strong>Week of:</strong> ${weekString}<br/>
+                                    <strong>Registry:</strong> ${ecosystems[ecoIndex] || 'Unknown'}<br/>
                                     <span>0 Reported Vulnerabilities</span>
                                 </div>`;
                             }
 
-                            const rawIds = params.data[4] ? params.data[4].split(',') : [];
+                            const rawIds = dataFields[4] ? dataFields[4].split(',') : [];
                             let linksHtml = '';
-                            
+
                             if (rawIds.length > 0) {
                                 linksHtml = rawIds.map(id => {
                                     const cleanId = id.trim();
-                                    return `<a href="https://osv.dev/vulnerability/${cleanId}" 
-                                               target="_blank" 
+                                    if(!cleanId) return '';
+                                    return `<a href="https://osv.dev/vulnerability/${cleanId}"
+                                               target="_blank"
                                                style="color: #60a5fa; text-decoration: underline; display: block; margin-top: 4px;"
-                                               onmouseover="this.style.color='#93c5fd'" 
+                                               onmouseover="this.style.color='#93c5fd'"
                                                onmouseout="this.style.color='#60a5fa'">
                                                &#8226; ${cleanId}
                                             </a>`;
                                 }).join('');
                             }
 
-                            return `<div class="p-1 font-mono text-xs" style="pointer-events: auto; min-width: 200px;">
-                                <strong>Week of:</strong> ${params.data[5]}<br/>
-                                <strong>Registry:</strong> ${ecosystems[params.data[1]]}<br/>
-                                <strong>Total Volume:</strong> <span class="text-white font-bold">${count} CVE(s)</span><br/>
-                                <strong>Peak Severity:</strong> <span class="text-red-400 font-bold">${params.data[3]}</span><br/>
+                            return `<div class="p-1 font-mono text-xs" style="pointer-events: auto; min-width: 220px; color: #24292f;">
+                                <strong style="color: #4b5563;">Week of:</strong> <span style="color: #000;">${weekString}</span><br/>
+                                <strong style="color: #4b5563;">Registry:</strong> <span style="color: #000;">${ecosystems[ecoIndex] || 'Unknown'}</span><br/>
+                                <strong style="color: #4b5563;">Total Volume:</strong> <span class="text-blue-600 font-bold">${count} CVE(s)</span><br/>
+                                <strong style="color: #4b5563;">Peak Severity:</strong> <span class="text-red-600 font-bold">${peakSeverity}</span><br/>
                                 ${linksHtml ? `
-                                <div style="margin-top: 8px; border-top: 1px solid #374151; padding-top: 6px;">
-                                    <strong style="display:block; color: #9ca3af; margin-bottom: 2px;">Actionable Advisories (&ge;7.0):</strong>
+                                <div style="margin-top: 8px; border-top: 1px solid #d1d5db; padding-top: 6px;">
+                                    <strong style="display:block; color: #4b5563; margin-bottom: 2px;">Actionable Advisories (&ge;7.0):</strong>
                                     <div style="max-height: 140px; overflow-y: auto; padding-right: 4px;">${linksHtml}</div>
                                 </div>` : ''}
                             </div>`;
@@ -205,7 +211,7 @@
                         axisLine: { show: false },
                         axisTick: { show: false },
                         axisLabel: {
-                            interval: 0, 
+                            interval: 0,
                             margin: 14,
                             textStyle: { color: '#8c9ba5', fontSize: 10, fontFamily: 'monospace' },
                             formatter: function (value) {
@@ -222,14 +228,14 @@
                         data: ecosystems,
                         axisLine: { show: false },
                         axisTick: { show: false },
-                        axisLabel: { 
-                            margin: 14, 
-                            textStyle: { color: '#e2e8f0', fontWeight: 'bold', fontSize: 11, fontFamily: 'monospace' } 
+                        axisLabel: {
+                            margin: 14,
+                            textStyle: { color: '#e2e8f0', fontWeight: 'bold', fontSize: 11, fontFamily: 'monospace' }
                         }
                     },
                     visualMap: {
                         type: 'piecewise',
-                        dimension: 2, 
+                        dimension: 2,
                         orient: 'horizontal',
                         left: 'center',
                         top: 10,
@@ -249,7 +255,7 @@
                         {
                             type: 'inside',
                             xAxisIndex: 0,
-                            zoomOnMouseWheel: false, 
+                            zoomOnMouseWheel: false,
                             moveOnMouseMove: true,
                             moveOnTouch: true
                         }
@@ -269,7 +275,7 @@
             try {
                 const response = await fetch('data.json');
                 globalDataset = await response.json();
-                
+
                 renderMatrixChart(timeframeSelector.value);
 
                 timeframeSelector.addEventListener('change', (e) => {
