@@ -154,8 +154,9 @@
                     backgroundColor: 'transparent',
                     tooltip: {
                         position: 'top',
-                        enterable: true,      
-                        hideDelay: 400,       
+                        enterable: true,
+                        triggerOn: 'click', // <--- ADDED THIS TO PIN ON CLICK
+                        hideDelay: 200,     // <--- Reduced slightly since you don't need a hover grace period anymore
                         renderMode: 'html',
                         formatter: (params) => {
                             const dataFields = params.data || params.value;
